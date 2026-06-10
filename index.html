@@ -184,14 +184,28 @@ const firebaseConfig = {
 
 let db;
 let unsubscribe = null;
+let firebaseReady = false;
 
+// Initialize Firebase
 try {
-  firebase.initializeApp(firebaseConfig);
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
   db = firebase.database();
-  setSyncStatus(true, 'Connected to Firebase');
+  firebaseReady = true;
+  
+  // Test connection
+  db.ref('.info/connected').on('value', function(snap) {
+    if (snap.val() === true) {
+      setSyncStatus(true, 'Connected to Firebase');
+    } else {
+      setSyncStatus(false, 'Firebase offline — using local storage');
+    }
+  });
 } catch (e) {
-  console.error('Firebase init error:', e);
+  console.error('Firebase error:', e);
   setSyncStatus(false, 'Firebase offline — using local storage');
+  firebaseReady = false;
 }
 
 // ===== DATA =====
@@ -292,7 +306,7 @@ let STATE = {checked:{}, quizChecked:{}, notes:{}};
 
 // ===== FIREBASE SYNC =====
 function loadFromFirebase() {
-  if (!db) {
+  if (!firebaseReady || !db) {
     loadFromLocalStorage();
     return;
   }
@@ -301,6 +315,8 @@ function loadFromFirebase() {
     if (snapshot.exists()) {
       STATE = snapshot.val();
       renderAll();
+    } else {
+      loadFromLocalStorage();
     }
   }, (error) => {
     console.error('Firebase read error:', error);
@@ -310,14 +326,17 @@ function loadFromFirebase() {
 }
 
 function saveToFirebase(key, value) {
-  if (!db) {
+  if (!firebaseReady || !db) {
     saveToLocalStorage();
     return;
   }
   
-  db.ref('planner/' + key).set(value).catch(err => {
+  db.ref('planner/' + key).set(value).then(() => {
+    setSyncStatus(true, 'Connected to Firebase');
+  }).catch(err => {
     console.error('Firebase write error:', err);
     saveToLocalStorage();
+    setSyncStatus(false, 'Firebase offline — using local storage');
   });
 }
 
